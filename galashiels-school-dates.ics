@@ -50,7 +50,7 @@ UID:galashiels-2026-12-01-7@github.com
 DTSTAMP:20260819T000000Z
 DTSTART;VALUE=DATE:20261201
 DTEND;VALUE=DATE:20261202
-SUMMARY:Galashiels casual holiday - Tuesday 1 December 2026
+SUMMARY:Galashiels casual holiday
 END:VEVENT
 BEGIN:VEVENT
 UID:galashiels-2026-12-22-8@github.com
