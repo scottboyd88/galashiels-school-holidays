@@ -10,15 +10,15 @@ PAGES = {
 }
 
 MONTHS = {
-    "January": 1, "February": 2, "March": 3, "April": 4,
-    "May": 5, "June": 6, "July": 7, "August": 8,
-    "September": 9, "October": 10, "November": 11, "December": 12
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12
 }
 
 def get_page(url):
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "Galashiels-School-Calendar/1.0"}
+        headers={"User-Agent": "Mozilla/5.0"}
     )
     with urllib.request.urlopen(req, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
@@ -26,129 +26,185 @@ def get_page(url):
 def clean(text):
     return re.sub(r"\s+", " ", text).strip()
 
-def parse_single(day, month, year):
-    return date(year, MONTHS[month], int(day))
+def parse_date(day, month, year):
+    return date(
+        int(year),
+        MONTHS[month.lower()],
+        int(day)
+    )
 
-def parse_date_text(text, default_year):
+def extract_date_range(text):
     text = clean(text)
 
-    # Range:
+    # Same-month range:
     # Monday 12 to Friday 16 October 2026
     m = re.search(
-        r"\b(\d{1,2})\s+(?:to|-)\s+(?:\w+\s+)?(\d{1,2})\s+"
+        r"(\d{1,2})\s+to\s+(?:\w+\s+)?(\d{1,2})\s+"
         r"(January|February|March|April|May|June|July|August|September|October|November|December)"
         r"\s+(\d{4})",
         text,
         re.I
     )
-    if m:
-        d1 = int(m.group(1))
-        d2 = int(m.group(2))
-        month = MONTHS[m.group(3).capitalize()]
-        year = int(m.group(4))
-        return date(year, month, d1), date(year, month, d2)
 
-    # Range:
+    if m:
+        start = parse_date(m.group(1), m.group(3), m.group(4))
+        end = parse_date(m.group(2), m.group(3), m.group(4))
+        return start, end
+
+    # Cross-year range:
     # Wednesday 23 December 2026 - Tuesday 5 January 2027
     m = re.search(
-        r"\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)"
-        r"\s+(\d{4})\s*(?:to|-)\s*(?:\w+\s+)?(\d{1,2})\s+"
+        r"(\d{1,2})\s+"
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"\s+(\d{4})\s*(?:to|-)\s*"
+        r"(?:\w+\s+)?(\d{1,2})\s+"
         r"(January|February|March|April|May|June|July|August|September|October|November|December)"
         r"\s+(\d{4})",
         text,
         re.I
     )
+
     if m:
-        start = parse_single(m.group(1), m.group(2).capitalize(), int(m.group(3)))
-        end = parse_single(m.group(4), m.group(5).capitalize(), int(m.group(6)))
+        start = parse_date(m.group(1), m.group(2), m.group(3))
+        end = parse_date(m.group(4), m.group(5), m.group(6))
         return start, end
 
     # Single date:
     # Monday 30 November 2026
     m = re.search(
-        r"\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"(\d{1,2})\s+"
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
         r"\s+(\d{4})",
         text,
         re.I
     )
+
     if m:
-        d = parse_single(m.group(1), m.group(2).capitalize(), int(m.group(3)))
+        d = parse_date(m.group(1), m.group(2), m.group(3))
         return d, d
 
-    # Casual holiday may be written:
-    # Tuesday 1 December 2026
     return None
 
-def extract_events(html, academic_year):
+
+def extract_year(html):
     soup = BeautifulSoup(html, "html.parser")
 
-    # Get the visible text as individual lines.
-    text = soup.get_text("\n")
-    lines = [clean(x) for x in text.splitlines() if clean(x)]
+    # Find the main page content rather than every date appearing
+    # anywhere on the council website.
+    main = soup.find("main")
+
+    if main is None:
+        main = soup
+
+    lines = [
+        clean(x)
+        for x in main.get_text("\n").splitlines()
+        if clean(x)
+    ]
 
     events = []
 
     for i, line in enumerate(lines):
         lower = line.lower()
 
-        # Only take the general term/holiday material.
-        interesting = any(word in lower for word in [
+        # Ignore navigation and unrelated content.
+        if any(x in lower for x in [
+            "school term dates for",
+            "contents",
+            "contact hq operations",
+            "address",
+            "telephone",
+            "next school term dates",
+            "previous school term dates",
+        ]):
+            continue
+
+        # General term/holiday/in-service dates.
+        if any(x in lower for x in [
             "staff resume",
             "in service",
             "pupils resume",
-            "holiday",
             "last day of term",
-            "term starts",
             "all resume",
             "schools closed",
             "school closed",
-            "easter",
-            "christmas"
-        ])
+            "holiday",
+            "easter holidays",
+            "christmas holidays",
+        ]):
+            parsed = extract_date_range(line)
 
-        if interesting:
-            parsed = parse_date_text(line, academic_year)
             if parsed:
                 start, end = parsed
                 events.append((start, end, line))
 
         # Galashiels-specific casual holiday.
         if lower == "galashiels":
-            for following in lines[i + 1:i + 4]:
-                parsed = parse_date_text(following, academic_year)
+            for following in lines[i + 1:i + 5]:
+                parsed = extract_date_range(following)
+
                 if parsed:
                     start, end = parsed
                     events.append(
-                        (start, end, "Galashiels casual holiday - " + following)
+                        (
+                            start,
+                            end,
+                            "Galashiels casual holiday"
+                        )
                     )
                     break
 
     return events
 
-def escape(value):
-    return (
-        value.replace("\\", "\\\\")
-             .replace(",", "\\,")
-             .replace(";", "\\;")
-             .replace("\n", "\\n")
-    )
 
 all_events = []
 
 for year, url in PAGES.items():
+    print(f"Checking {url}")
+
     try:
         html = get_page(url)
-        all_events.extend(extract_events(html, year))
-    except Exception as e:
-        print(f"Could not read {url}: {e}")
+        year_events = extract_year(html)
 
-# Remove duplicates.
+        print(f"Found {len(year_events)} relevant events")
+
+        all_events.extend(year_events)
+
+    except Exception as error:
+        print(f"ERROR reading {url}: {error}")
+
+
+# Remove duplicates using date + description.
 unique = {}
-for start, end, summary in all_events:
-    key = (start, end, summary)
-    unique[key] = (start, end, summary)
 
-events = sorted(unique.values(), key=lambda x: (x[0], x[1], x[2]))
+for start, end, summary in all_events:
+    key = (
+        start.isoformat(),
+        end.isoformat(),
+        summary
+    )
+
+    unique[key] = (
+        start,
+        end,
+        summary
+    )
+
+events = sorted(
+    unique.values(),
+    key=lambda x: (x[0], x[1], x[2])
+)
+
+
+def escape(value):
+    return (
+        value
+        .replace("\\", "\\\\")
+        .replace(",", "\\,")
+        .replace(";", "\\;")
+        .replace("\n", "\\n")
+    )
+
 
 ics = [
     "BEGIN:VCALENDAR",
@@ -159,6 +215,7 @@ ics = [
 ]
 
 for number, (start, end, summary) in enumerate(events, 1):
+
     ics.extend([
         "BEGIN:VEVENT",
         f"UID:galashiels-{start.isoformat()}-{number}@github.com",
@@ -171,7 +228,11 @@ for number, (start, end, summary) in enumerate(events, 1):
 
 ics.append("END:VCALENDAR")
 
-with open("galashiels-school-dates.ics", "w", encoding="utf-8") as f:
-    f.write("\r\n".join(ics) + "\r\n")
+with open(
+    "galashiels-school-dates.ics",
+    "w",
+    encoding="utf-8"
+) as file:
+    file.write("\r\n".join(ics) + "\r\n")
 
 print(f"Generated {len(events)} calendar events.")
