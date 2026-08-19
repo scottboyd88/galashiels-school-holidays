@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: galashiels-calendar-update
+  cancel-in-progress: true
+
 jobs:
   update-calendar:
     runs-on: ubuntu-latest
@@ -15,6 +19,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,7 +41,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git pull --rebase origin main
+          git fetch origin main
+          git rebase origin/main
 
           git add galashiels-school-dates.ics
 
@@ -42,5 +50,5 @@ jobs:
             echo "No calendar changes."
           else
             git commit -m "Update Galashiels school calendar"
-            git push
+            git push origin HEAD:main
           fi
