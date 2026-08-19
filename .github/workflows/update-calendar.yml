@@ -33,10 +33,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install beautifulsoup4
 
+      - name: Sync repository
+        run: |
+          git pull --rebase origin main
+
       - name: Update calendar
         run: python update_calendar.py
 
-          - name: Save updated calendar
+      - name: Save updated calendar
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -47,6 +51,5 @@ jobs:
             echo "No calendar changes."
           else
             git commit -m "Update Galashiels school calendar"
-            git pull --rebase origin main
             git push origin HEAD:main
           fi
